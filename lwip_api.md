@@ -45,21 +45,6 @@
 >>与CC.h不同的是，在lwip源文件中其实存在opt.h描述了lwipopts.h中所描述值的默认值，如果我们不在lwipopts中对值进行改  
 >>动，则会保持默认。
 
->***ethernetif.c中函数的改写***  
->  
->  ethernetif.c实际上起到一个与网卡对接的作用，它主要负责初始化网卡和管理数据包在网卡上的收发。  
-以下是其中已经写好框架的五个函数的具体职责
->>`static void low_level_init(struct netif *netif)`  
->> low_level_init为网卡初始化函数，主要完成网卡复位以及参数初始化，同时初始化netif部分字段。<br/>  
->> `static err_t low_level_output(struct netif *netif, struct pbuf *p)`    
->> low_level_output为网卡数据包发送函数，它将会把数据包以pbuf的形式发送出去。<br/>  
->> `err_t ethernetif_init(struct netif *netif)`   
->> ethernetif_init是对接上层网络接口结构的函数，它会初始化netif部分字段并调用low_level_init。<br/><br/>
->> `static struct pbuf *low_level_input(struct netif *netif)`    
->> low_level_input是网卡数据包接收函数，接收到的数据将被包装为pbuf形式。<br/>  
->> `void ethernetif_input(int iface, struct pbuf *p)`     
->> ethernetif_input是数据包递交函数，负责将数据包递交至api层处理。<br/><br/>  
-
 >***netif结构体解析***<br/><br>
 >netif网络接口是这一层的API中重要的结构体，它实际上抽象了网卡，方便与应用层的对接。  
 >>```C
@@ -106,3 +91,20 @@
 >>```
 >>以上代码段展示了一个名为netif_demo的网卡实例被加载到链表中的过程，其中ethernetif_init、tcpip_input分别指明了  
 >>函数指针init和input的具体值。
+
+
+
+>***ethernetif.c中函数的改写***  
+>  
+>  ethernetif.c实际上起到一个与网卡对接的作用，它主要负责初始化网卡和管理数据包在网卡上的收发。  
+以下是其中已经写好框架的五个函数的具体职责
+>>`static void low_level_init(struct netif *netif)`  
+>> low_level_init为网卡初始化函数，主要完成网卡复位以及参数初始化，同时初始化netif部分字段。<br/>  
+>> `static err_t low_level_output(struct netif *netif, struct pbuf *p)`    
+>> low_level_output为网卡数据包发送函数，它将会把数据包以pbuf的形式发送出去。<br/>  
+>> `err_t ethernetif_init(struct netif *netif)`   
+>> ethernetif_init是对接上层网络接口结构的函数，它会初始化netif部分字段并调用low_level_init。<br/><br/>
+>> `static struct pbuf *low_level_input(struct netif *netif)`    
+>> low_level_input是网卡数据包接收函数，接收到的数据将被包装为pbuf形式。<br/>  
+>> `void ethernetif_input(int iface, struct pbuf *p)`     
+>> ethernetif_input是数据包递交函数，负责将数据包递交至api层处理。<br/><br/>  
