@@ -58,7 +58,51 @@
 >> `static struct pbuf *low_level_input(struct netif *netif)`    
 >> low_level_input是网卡数据包接收函数，接收到的数据将被包装为pbuf形式。<br/>  
 >> `void ethernetif_input(int iface, struct pbuf *p)`     
->> ethernetif_input是数据包递交函数，负责将数据包递交至api层处理。<br/><br/>
+>> ethernetif_input是数据包递交函数，负责将数据包递交至api层处理。<br/><br/>  
+
 >***netif结构体解析***<br/><br>
->
-  
+>netif网络接口是这一层的API中重要的结构体，它实际上抽象了网卡，方便与应用层的对接。  
+>>```C
+>>struct netif
+>>{
+>>	struct netif *next;
+>>	/* IP地址、子网掩码、默认网关配置 */
+>>	ip_addr_t ip_addr;
+>>	ip_addr_t netmask;
+>>	ip_addr_t gw;
+>>	
+>>	//从网卡上取得一个数据包
+>>	err_t (* input)(struct pbuf *p, struct netif *inp);
+>>	
+>>	//IP层向网卡发送一个数据包
+>>	err_t (* output)(struct netif *netif, struct pbuf *p,struct ip_addr *ipaddr);   
+>>
+>>	//ARP发送数据包
+>>	err_t (* linkoutput)(struct netif *netif, struct pbuf *p);
+>>	
+>>	u8_t hwaddr[NETIF_MAX_HWADDR_LEN];      //MAC 地址
+>>	u16_t mtu;             					   //一次可以传送的最大字节数
+>>	char name[2]; 							      //网络接口使用的设备驱动类型的种类
+>>	u8_t num;        						      //用来标示使用同种驱动类型的不同网络接口
+>>	......
+>>}
+>>```
+>><br/>
+>>结构体过于抽象，我们来看一个初始化的具体例子  
+>>
+>>```C
+>>struct netif netif_demo;			      //创建一个虚拟网卡的实例                         
+>>struct ip_addr ipaddr, netmask, gw;	//用于存放地址
+>>
+>>/*给三个地址赋值*/
+>>IP4_ADDR(&gw, 192,168,0,1);   
+>>IP4_ADDR(&ipaddr, 192,168,0,60); 
+>>IP4_ADDR(&netmask, 255,255,255,0);
+>> 
+>>netif_init(); //初始化存放netif实例的链表
+>>
+>>/*完善netif_demo的字段，并将其添加至链表中。*/   
+>>netif_add(&enc28j60, &ipaddr, &netmask, &gw, NULL, ethernetif_init, tcpip_input);                                          
+>>```
+>>以上代码段展示了一个名为netif_demo的网卡实例被加载到链表中的过程，其中ethernetif_init、tcpip_input分别指明了  
+>>函数指针init和input的具体值。
