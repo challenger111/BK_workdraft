@@ -238,6 +238,7 @@
   
 >>*信号量函数的定义*
 >>```C
+>> typedef beken_semaphore sys_sem_t                        //定义信号量的数据类型
 >> err_t sys_sem_new(sys_sem_t *sem, u8_t count)            //创建一个信号量
 >> void sys_sem_free(sys_sem_t *sem)                        //删除一个信号量
 >> void sys_sem_signal(sys_sem_t *sem)                      //释放一个信号量
@@ -249,14 +250,15 @@
 
 >>*邮箱函数的定义*
 >>```C
+>> typedef beken_queue_t sys_mbox_t;                                                //定义邮箱的数据类型
 >> err_t sys_mbox_new(sys_mbox_t *mbox, int size)                                   //新建一个邮箱
 >> void sys_mbox_free(sys_mbox_t *mbox)                                             //删除一个邮箱
 >> void sys_mbox_post(sys_mbox_t *mbox, void *data)                                 //向邮箱投递消息，阻塞
 >> err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)                              //向邮箱投递消息，不阻塞
 >> u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)           //从邮箱中取消息，阻塞  
 >> u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)                       //从邮箱中取消息，不阻塞
->> int sys_mbox_valid(sys_mbox_t *mbox)                                             //查看是否有邮箱在运行
->> void sys_mbox_set_invalid(sys_mbox_t *mbox)                                      //关闭邮箱功能
+>> int sys_mbox_valid(sys_mbox_t *mbox)                                             //查看邮箱是否有效
+>> void sys_mbox_set_invalid(sys_mbox_t *mbox)                                      //使邮箱无效（置为空指针）
 >> ```
 
 >***sequential API底层工作流程***  
