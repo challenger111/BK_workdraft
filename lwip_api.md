@@ -265,6 +265,10 @@
 >以下将以流程图形式讲述API在网卡处接发数据包的工作流程
 > ![流程图](https://user-images.githubusercontent.com/58408817/180150969-e99b45cc-b025-4da5-b0fe-9373281dba8b.png)  
 > 以上工作流程同样也基本适用于SDK3.0.X
+> 关键函数：
+>> tcpip_input函数通过调用tcpip_inpkt将pbuf和input函数指针封装进msg结构体中，并且送入mbox。
+>> tcpip_thread在循环中不断抓取mbox中的msg，并且根据其中封装的类型、input函数推入不同的模块中。
+>> tcpip_thread将由tcpip_init中的sys_thread_new函数来启动。
 
 >***sequential API中的数据结构和部分函数***  
 >> *API内数据包描述结构netbuf*
