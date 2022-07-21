@@ -226,8 +226,8 @@
 >>```C
 >>sys_arch.h中主要是关于操作系统模拟相关的一些宏、结构体、数据类型的定义。
 
->操作系统模拟层的实现
->>***全局变量与初始化***
+>***操作系统模拟层的实现***
+>>*全局变量与初始化*
 >>```C
 >> sys_arch.c
 >> static OS_MEM *MboxMem   // 邮箱内存管理结构 
@@ -236,7 +236,7 @@
 >> ......  
 >> ```
   
->>***信号量函数的定义***
+>>*信号量函数的定义*
 >>```C
 >> err_t sys_sem_new(sys_sem_t *sem, u8_t count)            //创建一个信号量
 >> void sys_sem_free(sys_sem_t *sem)                        //删除一个信号量
@@ -247,14 +247,134 @@
 >> u32_t sys_arch_sem_wait(sys_sem_t *sem, u32_t timeout)
 >>```
 
->>***邮箱函数的定义***
+>>*邮箱函数的定义*
 >>```C
->> err_t sys_mbox_new(sys_mbox_t *mbox, int size)
->> void sys_mbox_free(sys_mbox_t *mbox)
->> void sys_mbox_post(sys_mbox_t *mbox, void *data)
->> err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)
->> u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)
->> u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
->> int sys_mbox_valid(sys_mbox_t *mbox)          
->> void sys_mbox_set_invalid(sys_mbox_t *mbox)
+>> err_t sys_mbox_new(sys_mbox_t *mbox, int size)                                   //新建一个邮箱
+>> void sys_mbox_free(sys_mbox_t *mbox)                                             //删除一个邮箱
+>> void sys_mbox_post(sys_mbox_t *mbox, void *data)                                 //向邮箱投递消息，阻塞
+>> err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)                              //向邮箱投递消息，不阻塞
+>> u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)           //从邮箱中取消息，阻塞  
+>> u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)                       //从邮箱中取消息，不阻塞
+>> int sys_mbox_valid(sys_mbox_t *mbox)                                             //查看是否有邮箱在运行
+>> void sys_mbox_set_invalid(sys_mbox_t *mbox)                                      //关闭邮箱功能
 >> ```
+
+>***sequential API底层工作流程***  
+>以下将以流程图形式讲述API在网卡处接发数据包的工作流程
+> ![流程图](https://user-images.githubusercontent.com/58408817/180150969-e99b45cc-b025-4da5-b0fe-9373281dba8b.png)  
+> 以上工作流程同样也基本适用于SDK3.0.X
+> ==== 两个收发函数调用层次结构
+
+>***sequential API中的数据结构和函数***  
+>> *API内数据包描述结构netbuf*
+>> ```C
+>> struct netbuf{
+>>    struct pbuf *p,*ptr;          //指向保存数据的pbuf，p永远指向pbuf链表中的第一个pbuf，ptr可以指向其他位置
+>>    struct ip_addr *addr;         //发出netbuf数据端的IP地址
+>>    u16_t port;                   //发出netbuf数据端的端口号
+>>  };
+>> ******有关netbuf的简单操作******
+>>  struct netbuf *buf;             //声明指针
+>>  buf=netbuf_new();               //申请新的netbuf
+>>  netbuf_alloc(buf,200);          //为buf分配200字节的空间
+>>  netbuf_delete(buf);             //删除buf        
+>>```
+>> *连接描述结构体netconn*
+>>```C
+>>struct netconn {
+>>    enum netconn_type type;                        //  连接的类型，包括 TCP, UDP 等
+>>    enum netconn_state state;                      //  连接的状态
+>>    union {                                        //  共用体，内核用来描述某个连接
+>>       struct ip_pcb    *ip; struct tcp_pcb *tcp; struct udp_pcb *udp; struct raw_pcb *raw;
+>>    } pcb;
+>>    err_t err;                                     //  该连接最近一次发生错误的编码
+>>    sys_sem_t op_completed;                        //  用于两部分 API 间同步的信号量
+>>    sys_mbox_t recvmbox;                          //  接收数据的邮箱
+>>    sys_mbox_t acceptmbox;                        //  服务器用来接受外部连接的邮箱
+>>    int socket;                                   //  该字段只在 socket 实现中使用
+>>    u16_t recv_avail;                             //
+>>    struct api_msg_msg *write_msg;                //  对数据不能正常处理时，保存信息
+>>    int write_offset;                             //  同上，表示已经处理数据的多少
+>>    netconn_callback callback;                    //  回调函数，在发生与该 netconn 相关的事件时可以调用
+>>};
+>>```
+>>*进程间通信结构体*
+>>```C
+>>struct api_msg {
+>>   void (* function)(struct api_msg_msg *msg);      //  函数指针
+>>   struct api_msg_msg msg;                          //  函数执行时需要的参数
+>>}
+>>********函数参数详解********
+>>struct api_msg_msg {
+>>    struct netconn *conn;                           //  与消息相关的某个连接
+>>    union {
+>>       struct netbuf *b;                            //  函数do_send 的参数
+>>       struct {                                     //  函数do_newconn 的参数
+>>       u8_t proto;
+>>       } n;
+>>       struct {                                     //  函数 do_bind 和do_connect 的参数
+>>       struct ip_addr *ipaddr;
+>>       u16_t port;
+>>       } bc;
+>>       struct {                                     //  函数 do_getaddr 的参数
+>>       struct ip_addr *ipaddr;
+>>       u16_t *port; u8_t local;
+>>       } ad;
+>>       struct {                                     //  函数do_write 的参数
+>>       const void *dataptr;
+>>       int len;
+>>       u8_t apiflags;
+>>       } w;
+>>       struct {                                     //  函数 do_recv 的参数
+>>       u16_t len;
+>>       } r;
+>>    } msg;
+>>};
+>>```
+>>*网络连接函数*  
+>>`struct netconn *netconn_new(enum netconn_type type)`
+>>建立一个新的连接数据结构，根据是要建立TCP还是UDP连接来选择参数值是NETCONN_TCP还
+>>是NETCONN_UCP。调用这个函数并不会建立连接并且没有数据被发送到网络中。
+
+>>`void netconn_delete(struct netconn *conn)`
+>>删除连接数据结构conn，如果连接已经打开，调用这个函数将会关闭这个连接。
+>>
+>>`enum netconn_type netconn_type(struct netconn *conn)`
+>>返回指定的连接conn的连接类型。返回的类型值就是前面netconn_new()函数说明中提到的
+>>NETCONN_TCP或者NETCONN_UDP。
+>>
+>>`int netconn_peer(struct netconn *conn, struct ip_addr *addr, unsigned short *port)`
+>>这个函数用于获取连接的远程终端的IP地址和端口号。addr和port为结果参数，它们的值由
+>>函数设置。如果指定的连接conn并没有连接任何远程主机，则获得的结果值并不确定。
+>>
+>>`int netconn_addr(struct netconn *conn, struct ip_addr **addr, unsigned short *port)`<br/>
+>>这个函数用于获取由conn指定的连接的本地IP地址和端口号。
+>>
+>>`int netconn_bind(struct netconn *conn, struct ip_addr *addr, unsigned short port)`<br/>
+>>为参数conn指定的连接绑定本地IP地址和TCP或UDP端口号。如果addr参数为NULL则本地IP
+>>地址由网络系统确定。
+>>
+>>`int netconn_connect(struct netconn *conn, struct ip_addr *addr, unsigned short port)`<br/>
+>>对UDP连接，该函数通过addr和port参数设定发送的UDP消息要到达的远程主机的IP地址和端
+>>口号。对TCP，netconn_connect()函数打开与指定远程主机的连接。
+>>
+>>`int netconn_listen(struct netconn *conn)`<br/>
+>>使参数conn指定的连接进入TCP监听（TCP LISTEN）状态。
+>>
+>>`struct netconn *netconn_accept(struct netconn *conn)`<br/>
+>>阻塞进程直至从远程主机发出的连接请求到达参数conn指定的连接。这个连接必须处于监听
+>>（LISTEN）状态，因此在调用netconn_accept()函数之前必须调用netconn_listen()函数。
+>>与远程主机的连接建立后，函数返回新连接的结构。
+>>
+>>`struct netbuf *netconn_recv(struct netconn *conn)`<br/>
+>>阻塞进程，等待数据到达参数conn指定的连接。如果连接已经被远程主机关闭，则返回NULL，
+>>其它情况，函数返回一个包含着接收到的数据的netbuf。  
+>>
+>>`int netconn_send(struct netconn *conn, struct netbuf *buf)`<br/>
+>>使用参数conn指定的UDP连接发送参数buf中的数据。函数对要发送的数据大小没有进行校验，无
+>>论是非常小还是非常大，因而函数的执行结果是不确定的。   
+>>
+>>`int netconn_close(struct netconn *conn)`<br/>
+>>关闭参数conn指定的连接。
+
+
