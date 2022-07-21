@@ -107,14 +107,13 @@
 >>netif->mtu = 1500;                                              //最大传输长度
 >>......
 >>```  
->><br/>
 >> `static err_t low_level_output(struct netif *netif, struct pbuf *p)`    
 >> low_level_output为网卡数据包发送函数，在发送数据的同时还要处理pbuf数据区和网卡发送位数的对齐问题。<br/>  
 >> `err_t ethernetif_init(struct netif *netif)`   
 >> ethernetif_init是对接上层网络接口结构的函数，它会初始化netif部分字段并调用low_level_init。<br/><br/>
 >> `static struct pbuf *low_level_input(struct netif *netif)`
 >> ```C
->>**** low_level_input是网卡数据包接收函数，接收到的数据将被包装为pbuf形式。****
+>> **** low_level_input是网卡数据包接收函数，接收到的数据将被包装为pbuf形式。****
 >> ......
 >> p=pbuf_alloc(PBUF_RAW,packetlength,PBUF_POOL);
 >> if(p!=NULL){
@@ -131,10 +130,10 @@
 >>   ......                      //失败处理
 >>   return p
 >>   ```
->>   <br/>
+>>   
 >> `void ethernetif_input(struct netif *netif)`  
->>**** ethernetif_input是数据包递交函数，通常由硬件层调用,负责将数据包递交至api层处理。****  
 >> ```C
+>> **** ethernetif_input是数据包递交函数，通常由硬件层调用,负责将数据包递交至api层处理。****  
 >> {
 >>    ......            //获取netif   
 >>    ethhdr = p->payload;          //获取数据区指针字段
@@ -216,6 +215,7 @@
 > 头文件的修改和定义
 >>```C
 >>lwipopts.h
+>> ****与raw/callback API类似，主要是有关操作系统，API使能的编译选项。****
 >>......
 >>#define NO_SYS                        1           //无操作系统
 >>#define LWIP_SOCKET                   0           //不编译socket API
@@ -224,9 +224,7 @@
 >>#define MEM_SIZE                      1024*32     //内存堆大小
 >>......
 >>```
->>与raw/callback API类似，主要是有关操作系统，API使能的编译选项。
->>```C
->>sys_arch.h中主要是关于操作系统模拟相关的一些宏、结构体、数据类型的定义。
+>>`sys_arch.h的创建：主要是关于操作系统模拟相关的一些宏、结构体、数据类型的定义。`
 
 >***操作系统模拟层的实现***
 >>*全局变量与初始化*
@@ -265,9 +263,8 @@
 >以下将以流程图形式讲述API在网卡处接发数据包的工作流程
 > ![流程图](https://user-images.githubusercontent.com/58408817/180150969-e99b45cc-b025-4da5-b0fe-9373281dba8b.png)  
 > 以上工作流程同样也基本适用于SDK3.0.X
-> ==== 两个收发函数调用层次结构
 
->***sequential API中的数据结构和函数***  
+>***sequential API中的数据结构和部分函数***  
 >> *API内数据包描述结构netbuf*
 >> ```C
 >> struct netbuf{
@@ -361,7 +358,7 @@
 >>
 >>`struct netbuf *netconn_recv(struct netconn *conn)`<br/>
 >>阻塞进程，等待数据到达参数conn指定的连接。如果连接已经被远程主机关闭，则返回NULL，<br/>
->>其它情况，函数返回一个包含着接收到的数据的netbuf。  
+>>其它情况，函数返回一个包含着接收到的数据的netbuf。  <br/>
 >>`int netconn_write(struct netconn *conn,void *data,int len,unsigned flags)`<br/>
 >>用于tcp连接，把data指向的数据放入conn的输出队列。  
 >>
@@ -400,7 +397,7 @@
 >```
 ### Socket API
 Socket API是基于Sequential API实现的，实现方法大多为对下层API的简单封装，它进一步简化了代码。
->Socket API中的函数
+>Socket API中的部分函数
 >```C
 >//建立一个TCP或者UDP连接
 >int socket(int domain, int type, int protocol)
