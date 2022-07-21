@@ -227,7 +227,7 @@
 >>`sys_arch.h的创建：主要是关于操作系统模拟相关的一些宏、结构体、数据类型的定义。`
 
 >***操作系统模拟层的实现***
->>*全局变量与初始化*
+>>***全局变量与初始化***
 >>```C
 >> sys_arch.c
 >> static OS_MEM *MboxMem   // 邮箱内存管理结构 
@@ -373,7 +373,8 @@
 >>论是非常小还是非常大，因而函数的执行结果是不确定的。   
 >>
 >>`int netconn_close(struct netconn *conn)`<br/>
->>关闭参数conn指定的连接。  
+>>关闭参数conn指定的连接。
+ 
 >***demo***  
 >```C
 >static void process_connection(struct netconn *conn){
