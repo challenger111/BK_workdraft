@@ -332,49 +332,98 @@
 >>};
 >>```
 >>*网络连接函数*  
->>`struct netconn *netconn_new(enum netconn_type type)`
->>建立一个新的连接数据结构，根据是要建立TCP还是UDP连接来选择参数值是NETCONN_TCP还
+>>`struct netconn *netconn_new(enum netconn_type type)`<br/>
+>>建立一个新的连接数据结构，根据是要建立TCP还是UDP连接来选择参数值是NETCONN_TCP还<br/>
 >>是NETCONN_UCP。调用这个函数并不会建立连接并且没有数据被发送到网络中。
 
->>`void netconn_delete(struct netconn *conn)`
+>>`void netconn_delete(struct netconn *conn)`<br/>
 >>删除连接数据结构conn，如果连接已经打开，调用这个函数将会关闭这个连接。
->>
->>`enum netconn_type netconn_type(struct netconn *conn)`
->>返回指定的连接conn的连接类型。返回的类型值就是前面netconn_new()函数说明中提到的
->>NETCONN_TCP或者NETCONN_UDP。
->>
->>`int netconn_peer(struct netconn *conn, struct ip_addr *addr, unsigned short *port)`
->>这个函数用于获取连接的远程终端的IP地址和端口号。addr和port为结果参数，它们的值由
->>函数设置。如果指定的连接conn并没有连接任何远程主机，则获得的结果值并不确定。
 >>
 >>`int netconn_addr(struct netconn *conn, struct ip_addr **addr, unsigned short *port)`<br/>
 >>这个函数用于获取由conn指定的连接的本地IP地址和端口号。
 >>
 >>`int netconn_bind(struct netconn *conn, struct ip_addr *addr, unsigned short port)`<br/>
->>为参数conn指定的连接绑定本地IP地址和TCP或UDP端口号。如果addr参数为NULL则本地IP
+>>为参数conn指定的连接绑定本地IP地址和TCP或UDP端口号。如果addr参数为NULL则本地IP<br/>
 >>地址由网络系统确定。
 >>
 >>`int netconn_connect(struct netconn *conn, struct ip_addr *addr, unsigned short port)`<br/>
->>对UDP连接，该函数通过addr和port参数设定发送的UDP消息要到达的远程主机的IP地址和端
+>>对UDP连接，该函数通过addr和port参数设定发送的UDP消息要到达的远程主机的IP地址和端<br/>
 >>口号。对TCP，netconn_connect()函数打开与指定远程主机的连接。
 >>
 >>`int netconn_listen(struct netconn *conn)`<br/>
 >>使参数conn指定的连接进入TCP监听（TCP LISTEN）状态。
 >>
 >>`struct netconn *netconn_accept(struct netconn *conn)`<br/>
->>阻塞进程直至从远程主机发出的连接请求到达参数conn指定的连接。这个连接必须处于监听
+>>阻塞进程直至从远程主机发出的连接请求到达参数conn指定的连接。这个连接必须处于监听<br/>
 >>（LISTEN）状态，因此在调用netconn_accept()函数之前必须调用netconn_listen()函数。
->>与远程主机的连接建立后，函数返回新连接的结构。
 >>
 >>`struct netbuf *netconn_recv(struct netconn *conn)`<br/>
->>阻塞进程，等待数据到达参数conn指定的连接。如果连接已经被远程主机关闭，则返回NULL，
+>>阻塞进程，等待数据到达参数conn指定的连接。如果连接已经被远程主机关闭，则返回NULL，<br/>
 >>其它情况，函数返回一个包含着接收到的数据的netbuf。  
+>>`int netconn_write(struct netconn *conn,void *data,int len,unsigned flags)`<br/>
+>>用于tcp连接，把data指向的数据放入conn的输出队列。  
 >>
 >>`int netconn_send(struct netconn *conn, struct netbuf *buf)`<br/>
->>使用参数conn指定的UDP连接发送参数buf中的数据。函数对要发送的数据大小没有进行校验，无
+>>使用参数conn指定的UDP连接发送参数buf中的数据。函数对要发送的数据大小没有进行校验，无<br/>
 >>论是非常小还是非常大，因而函数的执行结果是不确定的。   
 >>
 >>`int netconn_close(struct netconn *conn)`<br/>
->>关闭参数conn指定的连接。
+>>关闭参数conn指定的连接。  
+>***demo***  
+>```C
+>static void process_connection(struct netconn *conn){
+>     struct netbuf *inbuf;
+>     char *rq;
+>     int len;
+>     inbuf=netconn_recv(conn);              //用inbuf接受数据包
+>     netbuf_data(inbuf,&rq,&len):           //用数组rq接受其中的数据
+>     /*s*/
+>     ......
+>     netconn_write(...)                     //发送数据
+>     ......
+>     netconn_close(conn)                    //关闭连接
+> }
+>********主函数********
+>int main(){
+>     struct netconn *conn,*newconn;         //声明连接
+>     conn=netconn_new(NETCONN_TCP);         //建立连接句柄
+>     netconn_bind(conn,NULL,80);            //绑定端口
+>     netconn_listen(conn);                  //进入监听状态
+>     while(1){
+>        newconn=netconn_accept(conn);       //接受新的连接请求
+>        process_connection(newconn);        //处理连接
+>        netconn_delete(newconn);            //删除连接句柄
+>      }
+> }
+>```
+### Socket API
+Socket API是基于Sequential API实现的，实现方法大多为对下层API的简单封装，它进一步简化了代码。
+>Socket API中的函数
+>```C
+>//建立一个TCP或者UDP连接
+>int socket(int domain, int type, int protocol)
+>//绑定端口号
+>int bind(int s, struct sockaddr *name, int namelen)
+>//监听连接
+>int listen(int s, int backlog)
+>//接受请求并获取远程主机的IP地址和端口号
+>int accept(int s, struct sockaddr *addr, int *addrlen)
+>//对于TCP和UDP内部分别调用不同的API函数发送数据
+>int send(int s, void *data, int size, unsigned int flags)
+>//用UDP发送数据，可以指定数据接受器
+>int sendto(int s, void *data, int size, unsigned int flags, struct sockaddr *to, int tolen)
+>//将接收到的netbuf复制到mem指针指向存储区
+>int recv(int s, void *mem, int len, unsigned int flags)
+>//与recv相同，并返回数据长度
+>int read(int s, void *mem, int len)
+>//与recv相同，并获取远程主机的IP地址和端口号
+>int recvfrom(int s, void *mem, int len, unsigned int flags, struct sockaddr *from, int *fromlen)
+>```
 
+## 三种API的对比
+|API|代码复杂度|优点|缺点|
+|----|----|----|----|
+|raw/callback|高|1.执行效率高<br/>2.节省内存开销|1.代码逻辑复杂，可读性差<br/>2.应用与内核处于统一进程，影响数据包的接收。|
+|sequential|中|拆分连接和应用数据处理，应用IPC通信，提高数据包处理效率。|1.代码逻辑仍然较为复杂<br/>2.IPC数据交流会耗费更多的时间和内存。|
+|socket|低|编程接口通用度高，简单易用。|它是基于sequential API的，所以效率相比而言还会更低一些。|
 
