@@ -39,7 +39,6 @@
 >>#define LWIP_NETCONN                  0           //不编译sequential API
 >>#define MEM_ALLIGNMENT                4           //系统对齐字节
 >>#define MEM_SIZE                      1024*32     //内存堆大小
->>#endif
 >>......
 >>```
 >>与CC.h不同的是，在lwip源文件中其实存在opt.h描述了lwipopts.h中所描述值的默认值，如果我们不在lwipopts中对值进行改  
@@ -76,8 +75,8 @@
 >>结构体过于抽象，我们来看一个初始化的具体例子  
 >>
 >>```C
->>struct netif netif_demo;			      //创建一个虚拟网卡的实例                         
->>struct ip_addr ipaddr, netmask, gw;	//用于存放地址
+>>struct netif netif_demo;			         //创建一个虚拟网卡的实例                         
+>>struct ip_addr ipaddr, netmask, gw;	   //用于存放地址
 >>
 >>/*给三个地址赋值*/
 >>IP4_ADDR(&gw, 192,168,0,1);   
@@ -100,6 +99,7 @@
 以下是其中已经写好框架的五个函数的预定职责
 >> `static void low_level_init(struct netif *netif)`
 >> ```C
+>> ****low_level_init为网卡初始化函数，主要完成网卡复位以及参数初始化，同时初始化netif部分字段。****
 >>.....
 >>netif->hostname = (char*)&wlan_name[vif_entry->index];          //初始化接口名
 >>netif->hwaddr_len = ETHARP_HWADDR_LEN;                          //MAC硬件地址长度      
@@ -107,13 +107,14 @@
 >>netif->mtu = 1500;                                              //最大传输长度
 >>......
 >>```  
->> low_level_init为网卡初始化函数，主要完成网卡复位以及参数初始化，同时初始化netif部分字段。<br/>  
+>><br/>
 >> `static err_t low_level_output(struct netif *netif, struct pbuf *p)`    
 >> low_level_output为网卡数据包发送函数，在发送数据的同时还要处理pbuf数据区和网卡发送位数的对齐问题。<br/>  
 >> `err_t ethernetif_init(struct netif *netif)`   
 >> ethernetif_init是对接上层网络接口结构的函数，它会初始化netif部分字段并调用low_level_init。<br/><br/>
 >> `static struct pbuf *low_level_input(struct netif *netif)`
 >> ```C
+>>**** low_level_input是网卡数据包接收函数，接收到的数据将被包装为pbuf形式。****
 >> ......
 >> p=pbuf_alloc(PBUF_RAW,packetlength,PBUF_POOL);
 >> if(p!=NULL){
@@ -130,8 +131,9 @@
 >>   ......                      //失败处理
 >>   return p
 >>   ```
->> low_level_input是网卡数据包接收函数，接收到的数据将被包装为pbuf形式。<br/>  
->> `void ethernetif_input(struct netif *netif)`    
+>>   <br/>
+>> `void ethernetif_input(struct netif *netif)`  
+>>**** ethernetif_input是数据包递交函数，通常由硬件层调用,负责将数据包递交至api层处理。****  
 >> ```C
 >> {
 >>    ......            //获取netif   
@@ -171,7 +173,7 @@
 >>        break;
 >>}
 >>```
->> ethernetif_input是数据包递交函数，通常由硬件层调用,负责将数据包递交至api层处理。  
+ 
 
 >***demo展示***  
 >下面这个demo主要结构为:
