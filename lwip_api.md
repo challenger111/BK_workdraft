@@ -257,18 +257,155 @@
 >> err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)                              //向邮箱投递消息，不阻塞
 >> u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)           //从邮箱中取消息，阻塞  
 >> u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)                       //从邮箱中取消息，不阻塞
->> int sys_mbox_valid(sys_mbox_t *mbox)                                             //查看邮箱是否有效
+>> int sys_mbox_valid(sys_mbox_t *mbox)                                             //查看邮箱是否有效，返回0或1
 >> void sys_mbox_set_invalid(sys_mbox_t *mbox)                                      //使邮箱无效（置为空指针）
 >> ```
+>> 有关阻塞与否，其实都与实现邮件、信号量的操作系统内核函数有关，比如rtos_push_to_queue(mbox,&data,timeout)<br/>
+>> 如果timeout值为0，则不阻塞，若值为BEKEN_WAIT_FOREVER，则阻塞。
 
 >***sequential API底层工作流程***  
->以下将以流程图形式讲述API在网卡处接发数据包的工作流程
+>以下将以流程图形式讲述API在网卡处接受数据包的工作流程
 > ![流程图](https://user-images.githubusercontent.com/58408817/180150969-e99b45cc-b025-4da5-b0fe-9373281dba8b.png)  
 > 以上工作流程同样也基本适用于SDK3.0.X
-> 关键函数：
+> 关键函数：  
+> 
 >> tcpip_input函数通过调用tcpip_inpkt将pbuf和input函数指针封装进msg结构体中，并且送入mbox。
 >> tcpip_thread在循环中不断抓取mbox中的msg，并且根据其中封装的类型、input函数推入不同的模块中。
->> tcpip_thread将由tcpip_init中的sys_thread_new函数来启动。
+>> tcpip_thread将由tcpip_init中的sys_thread_new函数来启动。  
+>> <br/>
+>> ```C
+>> tcpip_input(struct pbuf *p, struct netif *inp)
+>>{
+>>#if LWIP_ETHERNET
+>>  if (inp->flags & (NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET)) {
+>>    return tcpip_inpkt(p, inp, ethernet_input);
+>>  } else
+>>#endif
+>>  return tcpip_inpkt(p, inp, ip_input);
+>>}
+>>```
+>>```C
+>>tcpip_inpkt(struct pbuf *p, struct netif *inp, netif_input_fn input_fn)
+>>{
+>>#if LWIP_TCPIP_CORE_LOCKING_INPUT
+>>  err_t ret;
+>>  LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_inpkt: PACKET %p/%p\n", (void *)p, (void *)inp));
+>>  LOCK_TCPIP_CORE();
+>>  ret = input_fn(p, inp);
+>>  UNLOCK_TCPIP_CORE();
+>>  return ret;
+>>#else /* LWIP_TCPIP_CORE_LOCKING_INPUT */
+>>  struct tcpip_msg *msg;
+>>
+>>  LWIP_ASSERT("Invalid mbox", sys_mbox_valid_val(mbox));
+>>  LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_inpkt: PACKET %p/%p\n", (void *)p, (void *)inp));
+>>  msg = (struct tcpip_msg *)memp_malloc(MEMP_TCPIP_MSG_INPKT);
+>>  if (msg == NULL) {
+>>  	LWIP_DEBUGF(TCPIP_DEBUG, ("memp malloc fail\n"));
+>>   return ERR_MEM;
+>>  }
+>>
+>>  msg->type = TCPIP_MSG_INPKT;
+>>  msg->msg.inp.p = p;
+>>  msg->msg.inp.netif = inp;
+>>  msg->msg.inp.input_fn = input_fn;
+>>  if (sys_mbox_trypost(&mbox, msg) != ERR_OK) {
+>>    memp_free(MEMP_TCPIP_MSG_INPKT, msg);
+>>	LWIP_DEBUGF(TCPIP_DEBUG, ("mbox trypost fail\n"));
+>>    return ERR_MEM;
+>>  }
+>>  return ERR_OK;
+>>#endif /* LWIP_TCPIP_CORE_LOCKING_INPUT */
+>>}
+>>```
+>>```C
+>>tcpip_thread(void *arg)
+>>{
+>>  struct tcpip_msg *msg;
+>>  LWIP_UNUSED_ARG(arg);
+>>
+>>  LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread start\n"));
+>>  if (tcpip_init_done != NULL) {
+>>    tcpip_init_done(tcpip_init_done_arg);
+>>  }
+>>
+>>  LOCK_TCPIP_CORE();
+>>  while (1) {                          /* MAIN Loop */
+>>    UNLOCK_TCPIP_CORE();
+>>    LWIP_TCPIP_THREAD_ALIVE();
+>>    /* wait for a message, timeouts are processed while waiting */
+>>    TCPIP_MBOX_FETCH(&mbox, (void **)&msg);
+>>    LOCK_TCPIP_CORE();
+>>   if (msg == NULL) {
+>>     LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: invalid message: NULL\n"));
+>>      LWIP_ASSERT("tcpip_thread: invalid message", 0);
+>>      continue;
+>>    }
+>>    switch (msg->type) {
+>>#if !LWIP_TCPIP_CORE_LOCKING
+>>    case TCPIP_MSG_API:
+>>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: API message %p\n", (void *)msg));
+>>      msg->msg.api_msg.function(msg->msg.api_msg.msg);
+>>      break;
+>>    case TCPIP_MSG_API_CALL:
+>>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: API CALL message %p\n", (void *)msg));
+>>      msg->msg.api_call.arg->err = msg->msg.api_call.function(msg->msg.api_call.arg);
+>>      sys_sem_signal(msg->msg.api_call.sem);
+>>      break;
+>>#endif /* !LWIP_TCPIP_CORE_LOCKING */
+>>
+>>#if !LWIP_TCPIP_CORE_LOCKING_INPUT
+>>    case TCPIP_MSG_INPKT:
+>>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: PACKET %p\n", (void *)msg));
+>>      msg->msg.inp.input_fn(msg->msg.inp.p, msg->msg.inp.netif);
+>>      memp_free(MEMP_TCPIP_MSG_INPKT, msg);
+>>      break;
+>>#endif /* !LWIP_TCPIP_CORE_LOCKING_INPUT */
+>>
+>>#if LWIP_TCPIP_TIMEOUT && LWIP_TIMERS
+>>    case TCPIP_MSG_TIMEOUT:
+>>     LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: TIMEOUT %p\n", (void *)msg));
+>>      sys_timeout(msg->msg.tmo.msecs, msg->msg.tmo.h, msg->msg.tmo.arg);
+>>      memp_free(MEMP_TCPIP_MSG_API, msg);
+>>      break;
+>>    case TCPIP_MSG_UNTIMEOUT:
+>>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: UNTIMEOUT %p\n", (void *)msg));
+>>      sys_untimeout(msg->msg.tmo.h, msg->msg.tmo.arg);
+>>      memp_free(MEMP_TCPIP_MSG_API, msg);
+>>      break;
+>>#endif /* LWIP_TCPIP_TIMEOUT && LWIP_TIMERS */
+>>
+>>    case TCPIP_MSG_CALLBACK:
+>>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: CALLBACK %p\n", (void *)msg));
+>>      msg->msg.cb.function(msg->msg.cb.ctx);
+>>      memp_free(MEMP_TCPIP_MSG_API, msg);
+>>      break;
+>>
+>>    case TCPIP_MSG_CALLBACK_STATIC:
+>>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: CALLBACK_STATIC %p\n", (void *)msg));
+>>      msg->msg.cb.function(msg->msg.cb.ctx);
+>>      break;
+>>
+>>    default:
+>>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: invalid message: %d\n", msg->type));
+>>      LWIP_ASSERT("tcpip_thread: invalid message", 0);
+>>      break;
+>>    }
+>>  }
+>>}
+>>```
+>>```C
+>>tcpip_init(tcpip_init_done_fn initfunc, void *arg)
+>>{
+>>  lwip_init();
+>>  //其他代码
+>>  sys_thread_new(TCPIP_THREAD_NAME, tcpip_thread, NULL, TCPIP_THREAD_STACKSIZE, TCPIP_THREAD_PRIO);
+>>}
+>>```  
+>>
+>>tcpip_input的调用结构图
+>> ![调用结构](https://user-images.githubusercontent.com/58408817/180434880-51785b74-5299-470e-b347-356bda876d21.png)  
+
 
 >***sequential API中的数据结构和部分函数***  
 >> *API内数据包描述结构netbuf*
