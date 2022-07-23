@@ -29,7 +29,7 @@
 >>#endif
 >>......
 >>```
->>显而易见地，该文件描述了协议栈内部使用的数据类型和一些宏定义。  
+>>显而易见地，该文件描述了协议栈API内部使用的数据类型和一些宏定义。  
 
 >>```C
 >>lwipopts.h
@@ -49,7 +49,7 @@
 >>```C
 >>struct netif
 >>{
->>	struct netif *next;
+>>	struct netif *next;                    //指向下一个网卡
 >>	/* IP地址、子网掩码、默认网关配置 */
 >>	ip_addr_t ip_addr;
 >>	ip_addr_t netmask;
@@ -86,7 +86,7 @@
 >>netif_init(); //初始化存放netif实例的链表
 >>
 >>/*完善netif_demo的字段，并将其添加至链表中。*/   
->>netif_add(&netif_demo, &ipaddr, &netmask, &gw, NULL, ethernetif_init, tcpip_input);                                          
+>>netif_add(&netif_demo, &ipaddr, &netmask, &gw, NULL, ethernetif_init, tcpip_input);   //挂载网卡                                       
 >>```
 >>以上代码段展示了一个名为netif_demo的网卡实例被加载到链表中的过程，其中ethernetif_init、tcpip_input分别指明了  
 >>函数指针init和input的具体值。
@@ -96,7 +96,7 @@
 >***ethernetif.c中函数的改写***  
 >  
 >  ethernetif.c实际上起到一个与网卡对接的作用，它主要负责初始化网卡和管理数据包在网卡上的收发。  
-以下是其中已经写好框架的五个函数的预定职责
+以下是其中已经写好框架的五个函数的预定职责  
 >> `static void low_level_init(struct netif *netif)`
 >> ```C
 >> ****low_level_init为网卡初始化函数，主要完成网卡复位以及参数初始化，同时初始化netif部分字段。****
@@ -107,22 +107,30 @@
 >>netif->mtu = 1500;                                              //最大传输长度
 >>......
 >>```  
->> `static err_t low_level_output(struct netif *netif, struct pbuf *p)`    
->> low_level_output为网卡数据包发送函数，在发送数据的同时还要处理pbuf数据区和网卡发送位数的对齐问题。<br/>  
+>> `static err_t low_level_output(struct netif *netif, struct pbuf *p)` <br/>
+>> low_level_output为网卡数据包发送函数，在发送数据的同时还要处理pbuf数据区和网卡位数的对齐问题。<br/>    
+>>```C
+>>static err_t low_level_output(strcut netif *netif,struct pbuf *p){
+>>/*发送数据指针、数据包总长度、数据长度、发送长度等数据的声明与初始化*/
+>>/*读取设置中断屏蔽寄存器的值*/
+>>/*给网卡发送数据总长度、设置写入网卡缓冲的初始地址*/
+>>/*解决pbuf链表中数据与网卡接收字节的对齐问题*/
+>>/*传输数据*/
+>>``` 
 >> `err_t ethernetif_init(struct netif *netif)`   
 >> ethernetif_init是对接上层网络接口结构的函数，它会初始化netif部分字段并调用low_level_init。<br/><br/>
 >> `static struct pbuf *low_level_input(struct netif *netif)`
 >> ```C
 >> **** low_level_input是网卡数据包接收函数，接收到的数据将被包装为pbuf形式。****
 >> ......
->> p=pbuf_alloc(PBUF_RAW,packetlength,PBUF_POOL);
+>> p=pbuf_alloc(PBUF_RAW,packetlength,PBUF_POOL);           //为接收指针分配空间
 >> if(p!=NULL){
 >>    memcpy(p->payload,PDHeader+4,14);
 >>    for(q=p;q!=NULL;q=q->next){
 >>       payload=q->payload;
 >>       len=q->len;
 >>       if(q==p){
->>          payload+=14;
+>>          payload+=14;         //跳过以太网首部数据
 >>          len-=14;
 >>       }
 >>       ......                  //从网卡拷贝数据
@@ -133,12 +141,12 @@
 >>   
 >> `void ethernetif_input(struct netif *netif)`  
 >> ```C
->> **** ethernetif_input是数据包递交函数，通常由硬件层调用,负责将数据包递交至api层处理。****  
+>> **** ethernetif_input是数据包递交函数，通常由硬件层调用,负责将数据包递交至上层处理。****  
 >> {
->>    ......            //获取netif   
+>>    ......                        //获取netif   
 >>    ethhdr = p->payload;          //获取数据区指针字段
 >>
->>    switch (htons(ethhdr->type))  //根据字段指示的类型进行操作
+>>    switch (htons(ethhdr->type))  //根据字段指示的类型进行操作,失败返回debug信息
 >>    {
 >>        /* IP or ARP packet? */
 >>    case ETHTYPE_IP:
@@ -152,7 +160,7 @@
 >>    case ETHTYPE_PPPOE:
 >>    #endif /* PPPOE_SUPPORT */
 >>        /* full packet send to tcpip_thread to process */
->>        if (netif->input(p, netif) != ERR_OK)    // ethernet_input
+>>        if (netif->input(p, netif) != ERR_OK)                      //此APIinput调用为ethernet_inputh函数
 >>        {
 >>            LWIP_DEBUGF(NETIF_DEBUG, ("ethernetif_input: IP input error\r\n"));
 >>            pbuf_free(p);
@@ -160,8 +168,8 @@
 >>        }
 >>        break;
 >>		
->>    case ETHTYPE_EAPOL:
->>	 	ke_l2_packet_tx(p->payload, p->len, iface);
+>>    case ETHTYPE_EAPOL:                                          
+>>	 	ke_l2_packet_tx(p->payload, p->len, iface);                    
 >>		pbuf_free(p);
 >>		p = NULL;
 >>        break;
@@ -217,9 +225,9 @@
 >>lwipopts.h
 >> ****与raw/callback API类似，主要是有关操作系统，API使能的编译选项。****
 >>......
->>#define NO_SYS                        1           //无操作系统
->>#define LWIP_SOCKET                   0           //不编译socket API
->>#define LWIP_NETCONN                  0           //不编译sequential API
+>>#define NO_SYS                        0           //有操作系统
+>>#define LWIP_SOCKET                   1           //编译socket API
+>>#define LWIP_NETCONN                  1           //编译sequential API
 >>#define MEM_ALLIGNMENT                4           //系统对齐字节
 >>#define MEM_SIZE                      1024*32     //内存堆大小
 >>......
@@ -269,16 +277,16 @@
 > 以上工作流程同样也基本适用于SDK3.0.X
 > 关键函数：  
 > 
->> tcpip_input函数通过调用tcpip_inpkt将pbuf和input函数指针封装进msg结构体中，并且送入mbox。
->> tcpip_thread在循环中不断抓取mbox中的msg，并且根据其中封装的类型、input函数推入不同的模块中。
->> tcpip_thread将由tcpip_init中的sys_thread_new函数来启动。  
+>> tcpip_input函数通过调用tcpip_inpkt将pbuf和input函数指针封装进msg结构体中，并且送入mbox。<br/>
+>> tcpip_thread在循环中不断抓取mbox中的msg，并且根据其中封装的类型、input函数推入不同的模块中。<br/>
+>> tcpip_thread将由tcpip_init中的sys_thread_new函数来启动。 
 >> <br/>
 >> ```C
 >> tcpip_input(struct pbuf *p, struct netif *inp)
 >>{
 >>#if LWIP_ETHERNET
->>  if (inp->flags & (NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET)) {
->>    return tcpip_inpkt(p, inp, ethernet_input);
+>>  if (inp->flags & (NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET)) {      //根据包的不同封装不同的函数
+>>    return tcpip_inpkt(p, inp, ethernet_input);                 
 >>  } else
 >>#endif
 >>  return tcpip_inpkt(p, inp, ip_input);
@@ -308,8 +316,8 @@
 >>  msg->type = TCPIP_MSG_INPKT;
 >>  msg->msg.inp.p = p;
 >>  msg->msg.inp.netif = inp;
->>  msg->msg.inp.input_fn = input_fn;
->>  if (sys_mbox_trypost(&mbox, msg) != ERR_OK) {
+>>  msg->msg.inp.input_fn = input_fn;                     //封装函数
+>>  if (sys_mbox_trypost(&mbox, msg) != ERR_OK) {         //投递进邮箱
 >>    memp_free(MEMP_TCPIP_MSG_INPKT, msg);
 >>	LWIP_DEBUGF(TCPIP_DEBUG, ("mbox trypost fail\n"));
 >>    return ERR_MEM;
@@ -334,62 +342,24 @@
 >>    UNLOCK_TCPIP_CORE();
 >>    LWIP_TCPIP_THREAD_ALIVE();
 >>    /* wait for a message, timeouts are processed while waiting */
->>    TCPIP_MBOX_FETCH(&mbox, (void **)&msg);
->>    LOCK_TCPIP_CORE();
+>>    TCPIP_MBOX_FETCH(&mbox, (void **)&msg);                                          //从邮箱中抓取一个msg
+>>    LOCK_TCPIP_CORE();                                                               //等待信号量的获取
 >>   if (msg == NULL) {
 >>     LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: invalid message: NULL\n"));
 >>      LWIP_ASSERT("tcpip_thread: invalid message", 0);
 >>      continue;
 >>    }
 >>    switch (msg->type) {
->>#if !LWIP_TCPIP_CORE_LOCKING
->>    case TCPIP_MSG_API:
->>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: API message %p\n", (void *)msg));
->>      msg->msg.api_msg.function(msg->msg.api_msg.msg);
->>      break;
->>    case TCPIP_MSG_API_CALL:
->>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: API CALL message %p\n", (void *)msg));
->>      msg->msg.api_call.arg->err = msg->msg.api_call.function(msg->msg.api_call.arg);
->>      sys_sem_signal(msg->msg.api_call.sem);
->>      break;
->>#endif /* !LWIP_TCPIP_CORE_LOCKING */
 >>
 >>#if !LWIP_TCPIP_CORE_LOCKING_INPUT
->>    case TCPIP_MSG_INPKT:
+>>    case TCPIP_MSG_INPKT:                                                            //在这里完成刚刚在inpkt中msg的拆解
 >>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: PACKET %p\n", (void *)msg));
->>      msg->msg.inp.input_fn(msg->msg.inp.p, msg->msg.inp.netif);
+>>      msg->msg.inp.input_fn(msg->msg.inp.p, msg->msg.inp.netif);                     //根据input函数（此处为ethernet_input）执行数据包的拆解
 >>      memp_free(MEMP_TCPIP_MSG_INPKT, msg);
 >>      break;
 >>#endif /* !LWIP_TCPIP_CORE_LOCKING_INPUT */
 >>
->>#if LWIP_TCPIP_TIMEOUT && LWIP_TIMERS
->>    case TCPIP_MSG_TIMEOUT:
->>     LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: TIMEOUT %p\n", (void *)msg));
->>      sys_timeout(msg->msg.tmo.msecs, msg->msg.tmo.h, msg->msg.tmo.arg);
->>      memp_free(MEMP_TCPIP_MSG_API, msg);
->>      break;
->>    case TCPIP_MSG_UNTIMEOUT:
->>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: UNTIMEOUT %p\n", (void *)msg));
->>      sys_untimeout(msg->msg.tmo.h, msg->msg.tmo.arg);
->>      memp_free(MEMP_TCPIP_MSG_API, msg);
->>      break;
->>#endif /* LWIP_TCPIP_TIMEOUT && LWIP_TIMERS */
->>
->>    case TCPIP_MSG_CALLBACK:
->>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: CALLBACK %p\n", (void *)msg));
->>      msg->msg.cb.function(msg->msg.cb.ctx);
->>      memp_free(MEMP_TCPIP_MSG_API, msg);
->>      break;
->>
->>    case TCPIP_MSG_CALLBACK_STATIC:
->>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: CALLBACK_STATIC %p\n", (void *)msg));
->>      msg->msg.cb.function(msg->msg.cb.ctx);
->>      break;
->>
->>    default:
->>      LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_thread: invalid message: %d\n", msg->type));
->>      LWIP_ASSERT("tcpip_thread: invalid message", 0);
->>      break;
+>>      /*其他类型的msg的处理*/
 >>    }
 >>  }
 >>}
@@ -434,7 +404,6 @@
 >>    sys_mbox_t recvmbox;                          //  接收数据的邮箱
 >>    sys_mbox_t acceptmbox;                        //  服务器用来接受外部连接的邮箱
 >>    int socket;                                   //  该字段只在 socket 实现中使用
->>    u16_t recv_avail;                             //
 >>    struct api_msg_msg *write_msg;                //  对数据不能正常处理时，保存信息
 >>    int write_offset;                             //  同上，表示已经处理数据的多少
 >>    netconn_callback callback;                    //  回调函数，在发生与该 netconn 相关的事件时可以调用
@@ -501,7 +470,8 @@
 >>
 >>`struct netbuf *netconn_recv(struct netconn *conn)`<br/>
 >>阻塞进程，等待数据到达参数conn指定的连接。如果连接已经被远程主机关闭，则返回NULL，<br/>
->>其它情况，函数返回一个包含着接收到的数据的netbuf。  <br/>
+>>其它情况，函数返回一个包含着接收到的数据的netbuf。<br/>
+>>
 >>`int netconn_write(struct netconn *conn,void *data,int len,unsigned flags)`<br/>
 >>用于tcp连接，把data指向的数据放入conn的输出队列。  
 >>
@@ -510,7 +480,26 @@
 >>论是非常小还是非常大，因而函数的执行结果是不确定的。   
 >>
 >>`int netconn_close(struct netconn *conn)`<br/>
->>关闭参数conn指定的连接。
+>>关闭参数conn指定的连接。<br/>
+>>*以netconn_new为例讲解*
+>>```C
+>>netconn_new_with_proto_and_callback(enum netconn_type t, u8_t proto, netconn_callback callback)
+>>{
+>>  struct netconn *conn;
+>>  API_MSG_VAR_DECLARE(msg);
+>>  API_MSG_VAR_ALLOC_RETURN_NULL(msg);
+>>
+>>  conn = netconn_alloc(t, callback);             //分配并初始化netconn，包括创建信号量、接收邮箱
+>>  if (conn != NULL) {
+>>    err_t err;
+>>
+>>    API_MSG_VAR_REF(msg).msg.n.proto = proto;
+>>    API_MSG_VAR_REF(msg).conn = conn;
+>>    err = netconn_apimsg(lwip_netconn_do_newconn, &API_MSG_VAR_REF(msg));             //函数指针设为lwip_netconn_do_newconn，并将msg发送
+>>                                                                                      //tcpip_thread接收到msg后拆解调用上面的函数，并在函数中调用tcp_new函数
+>>    //错误断言、debug返回
+>>  }
+>> ```
  
 >***demo***  
 >```C
